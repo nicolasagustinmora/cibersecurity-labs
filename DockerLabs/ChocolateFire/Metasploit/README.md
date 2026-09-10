@@ -78,9 +78,6 @@ LPORT  4444
 ```
 # 7. Vulnerability Check
 
-```markdown
-## Vulnerability Check
-```
 Before exploitation, the module was tested with:
 
 ```bash
@@ -132,9 +129,6 @@ Command shell session 1 opened
 
 # 9. Shell verification
 
-```markdown
-## Shell Verification
-```
 The obtained shell was verified with:
 
 ```bash
@@ -204,9 +198,6 @@ steps, while Metasploit provided automation and repeatability.
 
 # 11. Lessons Learned
 
-```markdown
-## Lesson Learned
-```
 - Metasploit modules automate complete exploitation workflows.
 - Exploit modules and payloads have different responsibilities.
 - `RHOSTS` identifies the target, while `LHOST` identifies the
